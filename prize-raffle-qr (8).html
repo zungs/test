@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>경품추첨</title>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════
+   ✏️ 여기만 수정하세요 — Firebase 설정
+   Firebase Console → 프로젝트 설정 → 웹앱 추가 → config 복사
+   ═══════════════════════════════════════════════════ */
+
+/* ───── RESET & VARS ───── */
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#fefcf3;--card:#ffffff;--accent:#e8577a;--gold:#d64a7a;--cyan:#e8577a;
+  --text:#5c3d2e;--muted:rgba(92,61,46,.45);--border:rgba(0,0,0,.07);--radius:16px;
+}
+html{overflow-x:hidden}
+body{font-family:'Noto Sans KR',sans-serif;background:linear-gradient(180deg,#fefcf3,#fff7ed,#fef3f0);color:var(--text);min-height:100vh;min-height:100dvh}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 20% 80%,rgba(232,87,122,.06),transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(255,200,180,.1),transparent 50%);pointer-events:none}
+
+/* ───── COMPONENTS ───── */
+.wrap{position:relative;z-index:1;max-width:960px;margin:0 auto;padding:16px 16px 80px}
+.logo{text-align:center;padding:24px 0 8px}
+.logo h1{font-size:clamp(1.6rem,5vw,2.2rem);color:var(--text);letter-spacing:2px;font-weight:400;font-family:sans-serif}
+.logo h1 b{font-weight:700;color:#e8577a}
+.logo p{color:var(--muted);font-size:.88rem}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;position:relative;overflow:hidden;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--gold))}
+.card.cyan::before{background:linear-gradient(90deg,var(--cyan),var(--gold))}
+.card h2{font-size:.95rem;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+
+input[type=text],input[type=password],select{font-family:inherit;font-size:.9rem;background:#fef8f4;color:var(--text);
+  border:1px solid var(--border);border-radius:10px;padding:10px 14px;outline:none;width:100%;transition:.2s}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(232,87,122,.1)}
+
+.row{display:flex;gap:8px;margin-bottom:10px}
+.row input,.row select{flex:1}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-size:.88rem;font-weight:700;
+  border:none;border-radius:12px;padding:10px 20px;cursor:pointer;transition:all .15s;color:#fff;white-space:nowrap}
+.btn:active{transform:scale(.96)}
+.btn-primary{background:linear-gradient(135deg,var(--accent),#d64a6a);box-shadow:0 4px 16px rgba(232,87,122,.25)}
+.btn-gold{background:linear-gradient(135deg,#e8577a,#d64a6a);color:#fff;box-shadow:0 4px 16px rgba(232,87,122,.2)}
+.btn-ghost{background:rgba(0,0,0,.04);color:var(--muted)}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.btn-sm{padding:5px 12px;font-size:.75rem;border-radius:8px}
+.btn-big{font-family:'Black Han Sans',sans-serif;font-size:clamp(1.1rem,3vw,1.5rem);padding:16px 48px;border-radius:60px;
+  box-shadow:0 8px 32px rgba(232,87,122,.25)}
+
+.tags{display:flex;flex-wrap:wrap;gap:5px;min-height:32px}
+.tag{display:inline-flex;align-items:center;gap:5px;background:rgba(232,87,122,.06);border:1px solid rgba(232,87,122,.12);
+  padding:5px 11px;border-radius:20px;font-size:.8rem;animation:pop .25s ease}
+.tag.won{border-color:rgba(232,87,122,.3);background:rgba(232,87,122,.12);color:#c4405f}
+.tag .n{background:rgba(232,87,122,.1);border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700}
+.tag .x{cursor:pointer;color:var(--muted);margin-left:2px;font-size:.7rem}
+.tag .x:hover{color:var(--accent)}
+
+.empty{color:var(--muted);font-size:.83rem;font-style:italic;padding:4px 0}
+
+.prize-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:.85rem}
+.prize-row:last-child{border:none}
+.prize-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);opacity:.3;flex-shrink:0}
+.prize-dot.done{opacity:1;background:#34c759}
+
+/* ───── DRAW ───── */
+.slot{font-family:'Black Han Sans',sans-serif;font-size:clamp(3.5rem,12vw,7rem);text-align:center;
+  color:var(--accent);text-shadow:0 0 30px rgba(232,87,122,.15);height:clamp(80px,16vw,130px);
+  display:flex;align-items:center;justify-content:center;letter-spacing:2px}
+.slot.spin{animation:glow .12s ease infinite alternate}
+.winner-msg{text-align:center;font-size:clamp(1rem,3vw,1.4rem);font-weight:900;padding:8px 0;
+  color:var(--accent)}
+
+.history-item{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--card);border-radius:12px;
+  margin-bottom:8px;border:1px solid var(--border);animation:slideUp .3s ease}
+.hi-num{font-family:'Black Han Sans',sans-serif;font-size:1.4rem;color:var(--cyan);min-width:44px;text-align:center}
+.hi-name{font-weight:700;font-size:.95rem}
+.hi-prize{color:var(--gold);font-weight:700;font-size:.82rem;margin-left:auto}
+
+/* ───── MODE SELECT ───── */
+.mode-select{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:32px}
+.mode-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:28px 24px;
+  width:220px;text-align:center;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.04)}
+.mode-card:hover{border-color:rgba(232,87,122,.2);transform:translateY(-2px);box-shadow:0 6px 20px rgba(232,87,122,.1)}
+.mode-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.mode-card.part::before{background:linear-gradient(90deg,var(--accent),#f4a0b5)}
+.mode-card.admin::before{background:linear-gradient(90deg,#f4a0b5,var(--accent))}
+.mode-card .icon{font-size:2.8rem;margin-bottom:8px}
+.mode-card .label{font-weight:800;font-size:1.05rem;margin-bottom:4px}
+.mode-card .desc{color:var(--muted);font-size:.8rem}
+
+.pin-area{margin-top:12px;display:flex;gap:6px}
+.pin-err{color:var(--accent);font-size:.76rem;margin-top:6px}
+
+.topbar{position:sticky;top:0;z-index:50;background:rgba(254,252,243,.92);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);padding:8px 16px;display:flex;justify-content:space-between;align-items:center}
+.topbar span{font-size:.8rem;color:var(--muted)}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:700px){.grid2{grid-template-columns:1fr}}
+
+.registered-box{text-align:center;padding:10px 0}
+.registered-box .check{font-size:2.2rem;margin-bottom:4px}
+.registered-box .rname{font-weight:800;font-size:1.1rem}
+.registered-box .rnum{color:var(--cyan);font-weight:700;font-size:1.1rem}
+.win-box{margin-top:14px;padding:12px 16px;border-radius:12px;background:rgba(232,87,122,.08);border:1px solid rgba(232,87,122,.15);text-align:center}
+
+/* ───── CONFETTI ───── */
+.confetti-box{position:fixed;inset:0;pointer-events:none;z-index:999;overflow:hidden}
+.conf{position:absolute;top:-20px;border-radius:2px;animation:fall linear forwards}
+
+/* ───── WINNER CELEBRATION OVERLAY ───── */
+.celebrate-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.92);backdrop-filter:blur(16px);animation:fadeIn .4s ease;cursor:pointer}
+.celebrate-inner{text-align:center;animation:celebPop .6s cubic-bezier(.17,.67,.29,1.4)}
+.celebrate-inner .trophy{font-size:5rem;animation:bounce 1s ease infinite}
+.celebrate-inner .congrats{font-family:'Black Han Sans',sans-serif;font-size:clamp(2rem,7vw,3.5rem);
+  color:#e8577a;margin:12px 0}
+.celebrate-inner .prize-label{font-size:clamp(1rem,3vw,1.4rem);color:#5c3d2e;font-weight:700;margin:8px 0 20px}
+.celebrate-inner .dismiss{color:var(--muted);font-size:.8rem;margin-top:24px;animation:pulse 2s ease infinite}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes celebPop{from{transform:scale(.3) rotate(-5deg);opacity:0}to{transform:scale(1) rotate(0);opacity:1}}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-20px)}}
+@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+
+/* ───── SETUP PAGE ───── */
+.setup{max-width:520px;margin:60px auto;padding:20px;text-align:center}
+.setup h2{color:var(--accent);margin-bottom:12px}
+.setup textarea{width:100%;height:200px;background:#fef8f4;color:var(--accent);border:1px solid var(--border);
+  border-radius:10px;padding:14px;font-family:'Courier New',monospace;font-size:.82rem;outline:none;resize:vertical}
+.setup .hint{color:var(--muted);font-size:.78rem;margin:10px 0;line-height:1.6;text-align:left}
+
+/* ───── ANIMS ───── */
+@keyframes pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes slideUp{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes glow{from{text-shadow:0 0 20px rgba(232,87,122,.2)}to{text-shadow:0 0 40px rgba(232,87,122,.35)}}
+@keyframes fall{0%{transform:translateY(0) rotate(0) scale(1);opacity:1}100%{transform:translateY(100vh) rotate(720deg) scale(.4);opacity:0}}
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+<div class="confetti-box" id="confettiBox"></div>
+<div id="celebOverlay"></div>
+<div style="text-align:center;padding:20px 0 12px;font-size:.7rem;color:rgba(92,61,46,.25);letter-spacing:.5px">© zungs</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  ✏️  Firebase 설정 — 아래 값을 본인 프로젝트 값으로 교체하세요
+// ══════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyALDEURoV0w9XZbaUf5uvDmgKK2_GuhjRE",
+  authDomain:        "cherryblossom-84852.firebaseapp.com",
+  databaseURL:       "https://cherryblossom-84852-default-rtdb.firebaseio.com",
+  projectId:         "cherryblossom-84852",
+  storageBucket:     "cherryblossom-84852.firebasestorage.app",
+  messagingSenderId: "564988908366",
+  appId:             "1:564988908366:web:2af8b17d973d0b1f44c41f"
+};
+
+const ADMIN_PIN = "1472";  // ← 관리자 비밀번호 변경 가능
+
+const EVENT_EMOJI = "🌸";          // ← 이벤트 이모지 변경 가능
+const EVENT_TITLE = "벚꽃마라톤";   // ← 이벤트 이름 변경 가능
+
+// ══════════════════════════════════════════════════════
+
+let db = null;
+let state = { people: [], prizes: [], winners: [] };
+let mode = null;        // null | 'participant' | 'admin'
+let myName = null;
+let spinning = false;
+let slotDisplay = "?";
+let announce = null;
+
+// ───── Firebase init ─────
+function initFirebase() {
+  if (FIREBASE_CONFIG.apiKey === "YOUR_API_KEY") return false;
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.database();
+    // Listen for realtime changes
+    db.ref("raffle").on("value", (snap) => {
+      const d = snap.val() || {};
+      const oldWinnerCount = state.winners.length;
+      state.people  = d.people  ? Object.values(d.people)  : [];
+      state.prizes  = d.prizes  ? Object.values(d.prizes)  : [];
+      state.winners = d.winners ? Object.values(d.winners) : [];
+      render();
+      // 참가자 화면: 새 당첨자가 생기면 본인이면 풀화면 축하
+      if (mode === "participant" && state.winners.length > oldWinnerCount) {
+        const latest = state.winners[state.winners.length - 1];
+        if (latest && latest.name === myName) {
+          fireConfetti();
+          showCelebration(latest.name, latest.prize);
+        }
+      }
+    });
+    return true;
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
+}
+
+async function savePeople(arr)  { await db.ref("raffle/people").set(arr.length ? arr : null); }
+async function savePrizes(arr)  { await db.ref("raffle/prizes").set(arr.length ? arr : null); }
+async function saveWinners(arr) { await db.ref("raffle/winners").set(arr.length ? arr : null); }
+
+// ───── Confetti ─────
+function fireConfetti() {
+  const box = document.getElementById("confettiBox");
+  const colors = ["#e8577a","#f4a0b5","#ffb7c5","#ffc4d4","#ff9bb5","#f8d7da"];
+  for (let i = 0; i < 70; i++) {
+    const c = document.createElement("div");
+    c.className = "conf";
+    c.style.left = Math.random()*100+"%";
+    c.style.background = colors[Math.floor(Math.random()*colors.length)];
+    c.style.width = (6+Math.random()*9)+"px";
+    c.style.height = (6+Math.random()*9)+"px";
+    c.style.animationDuration = (1.5+Math.random()*2)+"s";
+    c.style.animationDelay = (Math.random()*.6)+"s";
+    c.style.borderRadius = Math.random()>.5?"50%":"2px";
+    box.appendChild(c);
+  }
+  setTimeout(() => box.innerHTML = "", 4500);
+}
+
+function showCelebration(name, prize) {
+  const el = document.getElementById("celebOverlay");
+  el.innerHTML = `<div class="celebrate-overlay" onclick="closeCelebration()">
+    <div class="celebrate-inner">
+      <div class="trophy">🏆</div>
+      <div class="congrats">축하합니다!</div>
+      <div style="font-size:1.3rem;font-weight:800;margin:4px 0">${name}님 당첨!</div>
+      <div class="prize-label">🎁 ${prize}</div>
+      <div class="dismiss">화면을 터치하면 닫힙니다</div>
+    </div>
+  </div>`;
+  // 진동 지원되는 폰이면 진동도
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+}
+function closeCelebration() {
+  document.getElementById("celebOverlay").innerHTML = "";
+}
+
+// ───── Render ─────
+function render() {
+  const app = document.getElementById("app");
+  if (!db) { app.innerHTML = renderSetup(); return; }
+  if (!mode) { app.innerHTML = renderModeSelect(); return; }
+  if (mode === "participant") { app.innerHTML = renderParticipant(); return; }
+  if (mode === "admin") { app.innerHTML = renderAdmin(); return; }
+}
+
+// ───── Setup page ─────
+function renderSetup() {
+  return `<div class="setup">
+    <div style="font-size:3rem;margin-bottom:8px">⚙️</div>
+    <h2>Firebase 설정이 필요합니다</h2>
+    <p style="color:var(--muted);font-size:.88rem;margin-bottom:20px">
+      아래 단계를 따라 무료 Firebase 프로젝트를 만들고 설정해주세요.
+    </p>
+    <div class="hint">
+      <strong style="color:var(--text)">📋 설정 방법:</strong><br><br>
+      1️⃣ <a href="https://console.firebase.google.com" target="_blank" style="color:var(--cyan)">Firebase Console</a> 접속 → 프로젝트 만들기<br><br>
+      2️⃣ 좌측 메뉴 "Realtime Database" → 데이터베이스 만들기 → <strong style="color:var(--accent)">테스트 모드</strong>로 시작<br><br>
+      3️⃣ 프로젝트 설정(⚙️) → 하단 "웹 앱 추가(&lt;/&gt;)" → 앱 등록<br><br>
+      4️⃣ 표시되는 <code style="color:var(--cyan)">firebaseConfig</code> 값을 이 HTML 파일의<br>
+         <code style="color:var(--accent)">FIREBASE_CONFIG</code> 부분에 붙여넣기<br><br>
+      5️⃣ 파일을 GitHub Pages 등에 업로드하면 완료! 🎉
+    </div>
+    <div style="margin-top:20px;padding:16px;background:rgba(232,87,122,.05);border:1px solid rgba(232,87,122,.12);border-radius:12px;text-align:left">
+      <div style="font-size:.82rem;color:var(--accent);font-weight:700;margin-bottom:6px">💡 무료 호스팅 (GitHub Pages)</div>
+      <div style="font-size:.78rem;color:var(--muted);line-height:1.6">
+        1. GitHub에서 새 Repository 생성<br>
+        2. 이 HTML 파일을 <code style="color:var(--cyan)">index.html</code>로 업로드<br>
+        3. Settings → Pages → Branch: main → Save<br>
+        4. 생성된 URL을 QR코드로 변환하여 공유!
+      </div>
+    </div>
+  </div>`;
+}
+
+// ───── Mode Select ─────
+function renderModeSelect() {
+  return `<div class="wrap">
+    <div class="logo">
+      <div style="font-size:3.5rem">${EVENT_EMOJI}</div>
+      <h1>${EVENT_EMOJI} <b>${EVENT_TITLE}</b> 경품추첨 ${EVENT_EMOJI}</h1>
+      <p>입장 유형을 선택하세요</p>
+    </div>
+    <div class="mode-select">
+      <div class="mode-card part" onclick="enterParticipant()">
+        <div class="icon">🙋</div>
+        <div class="label">참가자</div>
+        <div class="desc">이름 등록 &amp; 결과 확인</div>
+      </div>
+      <div class="mode-card admin">
+        <div class="icon">👑</div>
+        <div class="label">관리자</div>
+        <div class="desc">경품 관리 &amp; 추첨 진행</div>
+        <div class="pin-area">
+          <input type="password" id="pinInput" placeholder="비밀번호" 
+            onkeydown="if(event.key==='Enter')tryAdmin()"
+            style="flex:1;font-size:.82rem;text-align:center">
+          <button class="btn btn-primary btn-sm" onclick="tryAdmin()">입장</button>
+        </div>
+        <div id="pinErr"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function enterParticipant() {
+  mode = "participant";
+  try {
+    const saved = localStorage.getItem("raffle_myName");
+    if (saved && state.people.includes(saved)) myName = saved;
+  } catch(e) {}
+  render();
+}
+
+function tryAdmin() {
+  const v = document.getElementById("pinInput").value;
+  if (v === ADMIN_PIN) { mode = "admin"; render(); }
+  else document.getElementById("pinErr").innerHTML = '<div class="pin-err">비밀번호가 틀렸습니다</div>';
+}
+
+// ───── Participant View ─────
+function renderParticipant() {
+  const isRegistered = myName && state.people.includes(myName);
+  const myIdx = isRegistered ? state.people.indexOf(myName) + 1 : -1;
+  const myWin = isRegistered ? state.winners.find(w => w.name === myName) : null;
+
+  let regSection;
+  if (!isRegistered) {
+    regSection = `<div class="card">
+      <h2>👋 참가 등록</h2>
+      <div class="row">
+        <input type="text" id="regName" placeholder="이름을 입력하세요" onkeydown="if(event.key==='Enter')registerMe()">
+        <button class="btn btn-primary" onclick="registerMe()">등록</button>
+      </div>
+    </div>`;
+  } else {
+    regSection = `<div class="card cyan">
+      <div class="registered-box">
+        <div class="check">✅</div>
+        <div class="rname">${myName}님, 등록 완료!</div>
+        <div style="color:var(--muted);font-size:.85rem;margin-top:4px">
+          참가번호 <span class="rnum">#${myIdx}</span>
+        </div>
+        ${myWin ? `<div class="win-box">
+          <div style="font-size:1.5rem">🏆</div>
+          <div style="font-weight:800;color:var(--accent);font-size:1rem">축하합니다! 당첨!</div>
+          <div style="font-size:.9rem;margin-top:4px">🎁 ${myWin.prize}</div>
+        </div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  return `<div class="topbar"><span>🙋 참가자</span><button class="btn btn-ghost btn-sm" onclick="mode=null;myName=null;render()">나가기</button></div>
+  <div class="wrap" style="max-width:520px">
+    <div class="logo"><h1>${EVENT_EMOJI} <b>${EVENT_TITLE}</b> 경품추첨 ${EVENT_EMOJI}</h1></div>
+    ${regSection}
+    <div class="card">
+      <h2>👥 참가자 (${state.people.length}명)</h2>
+      <div class="tags">
+        ${state.people.length === 0 ? '<span class="empty">아직 등록자가 없습니다</span>' :
+          state.people.map((p, i) => {
+            const won = state.winners.some(w => w.name === p);
+            return `<span class="tag${won?' won':''}"><span class="n">${i+1}</span>${p}${won?' 🏆':''}</span>`;
+          }).join('')}
+      </div>
+    </div>
+    ${state.winners.length > 0 ? `<div class="card" style="position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--gold),var(--accent))"></div>
+      <h2>🏆 당첨 결과</h2>
+      ${state.winners.map((w, i) => `<div class="history-item">
+        <span class="hi-num">#${w.number}</span>
+        <span class="hi-name">${w.name}</span>
+        <span class="hi-prize">🎁 ${w.prize}</span>
+      </div>`).join('')}
+    </div>` : ''}
+  </div>`;
+}
+
+async function registerMe() {
+  const inp = document.getElementById("regName");
+  const name = inp.value.trim();
+  if (!name) return;
+  if (state.people.includes(name)) { inp.value = ""; inp.placeholder = "이미 등록된 이름입니다"; return; }
+  myName = name;
+  try { localStorage.setItem("raffle_myName", name); } catch(e) {}
+  const updated = [...state.people, name];
+  await savePeople(updated);
+}
+
+// ───── Admin View ─────
+function renderAdmin() {
+  const remaining = state.prizes.filter(p => !p.winner);
+  const available = state.people.filter(p => !state.winners.some(w => w.name === p));
+  const canDraw = remaining.length > 0 && available.length > 0 && !spinning;
+
+  return `<div class="topbar"><span>👑 관리자</span><button class="btn btn-ghost btn-sm" onclick="mode=null;render()">나가기</button></div>
+  <div class="wrap">
+    <div class="logo"><h1>${EVENT_EMOJI} <b>${EVENT_TITLE}</b> 관리자 ${EVENT_EMOJI}</h1><p>참가자와 경품을 관리하고 추첨을 진행하세요</p></div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>👥 참가자 (${state.people.length}명)
+          <span style="margin-left:auto;font-size:.75rem;font-weight:400;color:var(--muted)">참가자가 직접 등록합니다</span>
+        </h2>
+        <div class="tags" style="max-height:180px;overflow-y:auto">
+          ${state.people.length === 0 ? '<span class="empty">QR코드로 접속한 참가자가 등록됩니다</span>' :
+            state.people.map((p, i) => {
+              const won = state.winners.some(w => w.name === p);
+              return `<span class="tag${won?' won':''}"><span class="n">${i+1}</span>${p}${won?' 🏆':''}<span class="x" onclick="removePerson(${i})">✕</span></span>`;
+            }).join('')}
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>🎁 경품 관리</h2>
+        <div class="row">
+          <input type="text" id="prizeInput" placeholder="경품명 입력" onkeydown="if(event.key==='Enter')addPrize()" style="flex:3">
+          <input type="number" id="prizeQty" placeholder="수량" value="1" min="1" max="99" style="flex:1;min-width:60px;text-align:center">
+          <button class="btn btn-primary" onclick="addPrize()">추가</button>
+        </div>
+        <div style="max-height:260px;overflow-y:auto">
+          ${state.prizes.length === 0 ? '<span class="empty">경품을 등록해주세요</span>' :
+            state.prizes.map((p, i) => {
+              return `<div class="prize-row">
+                <span class="prize-dot${p.winner?' done':''}"></span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</span>
+                ${p.winner ? `<span style="color:var(--accent);font-weight:700;font-size:.78rem">🏆 ${p.winner}</span>` : ''}
+                <span class="x" style="cursor:pointer;color:var(--muted);font-size:.75rem" onclick="removePrize(${i})">✕</span>
+              </div>`;
+            }).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="card cyan" style="text-align:center">
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="color:var(--muted);font-size:.88rem">추첨할 경품:</span>
+        <select id="prizeSelect" style="width:auto;min-width:160px">
+          ${remaining.length === 0 ? '<option value="">모든 경품 추첨 완료</option>' :
+            remaining.map(p => {
+              const idx = state.prizes.indexOf(p);
+              return `<option value="${idx}">${p.name}</option>`;
+            }).join('')}
+        </select>
+      </div>
+      <div class="slot${spinning?' spin':''}">${slotDisplay}</div>
+      ${announce ? `<div class="winner-msg">🎉 ${announce.number}번 ${announce.name}님 당첨! — ${announce.prize}</div>` : ''}
+      <button class="btn btn-primary btn-big" onclick="startDraw()" ${canDraw?'':'disabled'}>🎯 추첨하기</button>
+      <div style="margin-top:10px;font-size:.78rem;color:var(--muted)">
+        남은 경품: ${remaining.length}개 · 추첨 가능: ${available.length}명
+      </div>
+    </div>
+
+    ${state.winners.length > 0 ? `<div class="card">
+      <h2>🏆 당첨 결과</h2>
+      ${state.winners.map(w => `<div class="history-item">
+        <span class="hi-num">#${w.number}</span>
+        <span class="hi-name">${w.name}</span>
+        <span class="hi-prize">🎁 ${w.prize}</span>
+      </div>`).join('')}
+    </div>` : ''}
+
+    <div style="text-align:center;margin-top:16px">
+      <button class="btn btn-ghost" onclick="resetAll()">🔄 전체 초기화</button>
+    </div>
+  </div>`;
+}
+
+async function addPrize() {
+  const inp = document.getElementById("prizeInput");
+  const qtyInp = document.getElementById("prizeQty");
+  const name = inp.value.trim();
+  if (!name) return;
+  const qty = Math.max(1, Math.min(99, parseInt(qtyInp.value) || 1));
+  const newPrizes = [];
+  for (let i = 0; i < qty; i++) {
+    newPrizes.push({ name: qty > 1 ? `${name} (${i+1}/${qty})` : name, winner: null });
+  }
+  const updated = [...state.prizes, ...newPrizes];
+  await savePrizes(updated);
+  inp.value = "";
+  qtyInp.value = "1";
+}
+async function removePrize(i) {
+  const updated = state.prizes.filter((_, idx) => idx !== i);
+  await savePrizes(updated);
+}
+async function removePerson(i) {
+  const updated = state.people.filter((_, idx) => idx !== i);
+  await savePeople(updated);
+}
+
+function startDraw() {
+  if (spinning) return;
+  const sel = document.getElementById("prizeSelect");
+  const prizeIdx = parseInt(sel.value);
+  if (isNaN(prizeIdx)) return;
+  const available = state.people.filter(p => !state.winners.some(w => w.name === p));
+  if (!available.length) return;
+
+  spinning = true;
+  announce = null;
+  render();
+
+  const winnerName = available[Math.floor(Math.random() * available.length)];
+  const winnerNum = state.people.indexOf(winnerName) + 1;
+
+  let count = 0;
+  const iv = setInterval(() => {
+    const rp = available[Math.floor(Math.random() * available.length)];
+    slotDisplay = state.people.indexOf(rp) + 1;
+    render();
+    count++;
+    if (count >= 25) {
+      clearInterval(iv);
+      let slow = 0;
+      const sv = setInterval(() => {
+        const rp2 = available[Math.floor(Math.random() * available.length)];
+        slotDisplay = state.people.indexOf(rp2) + 1;
+        render();
+        slow++;
+        if (slow >= 6) {
+          clearInterval(sv);
+          slotDisplay = winnerNum;
+
+          const newPrizes = [...state.prizes];
+          newPrizes[prizeIdx] = { ...newPrizes[prizeIdx], winner: winnerName };
+          const newWinners = [...state.winners, { name: winnerName, number: winnerNum, prize: state.prizes[prizeIdx].name }];
+
+          Promise.all([savePrizes(newPrizes), saveWinners(newWinners)]).then(() => {
+            announce = { name: winnerName, number: winnerNum, prize: state.prizes[prizeIdx].name };
+            spinning = false;
+            fireConfetti();
+            render();
+          });
+        }
+      }, 300);
+    }
+  }, 60);
+}
+
+async function resetAll() {
+  if (state.winners.length && !confirm("모든 데이터를 초기화할까요?")) return;
+  await Promise.all([savePeople([]), savePrizes([]), saveWinners([])]);
+  try { localStorage.removeItem("raffle_myName"); } catch(e) {}
+  slotDisplay = "?";
+  announce = null;
+  myName = null;
+}
+
+// ───── Init ─────
+document.title = `${EVENT_EMOJI} ${EVENT_TITLE} 경품추첨`;
+const ok = initFirebase();
+if (!ok) render();
+</script>
+</body>
+</html>
